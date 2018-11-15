@@ -92,14 +92,17 @@ class Question(NamedTuple):
 
 
 class QantaDatabase:
-    def __init__(self, dataset_path=os.path.join('qanta-codalab/data/', QANTA_MAPPED_DATASET_PATH)):
+    def __init__(self, dataset_path=os.path.join('qanta-codalab/data/', QANTA_MAPPED_DATASET_PATH), category=None):
         with open(dataset_path) as f:
             self.dataset = json.load(f)
 
         self.version = self.dataset['version']
         self.raw_questions = self.dataset['questions']
         self.all_questions = [Question(**q) for q in self.raw_questions]
-        self.mapped_questions = [q for q in self.all_questions if q.page is not None]
+        if category is not None:
+            self.mapped_questions = [q for q in self.all_questions if q.page is not None and q.category in category]
+        else:
+            self.mapped_questions = [q for q in self.all_questions if q.page is not None]
 
         self.train_questions = [q for q in self.mapped_questions if q.fold in TRAIN_FOLDS]
         self.guess_train_questions = [q for q in self.train_questions if q.fold == GUESSER_TRAIN_FOLD]
@@ -122,9 +125,8 @@ class QantaDatabase:
             GUESSER_TEST_FOLD: self.guess_test_questions
         }
 
-
 class QuizBowlDataset:
-    def __init__(self, *, guesser_train=False, buzzer_train=False):
+    def __init__(self, *, guesser_train=False, buzzer_train=False, category=None):
         """
         Initialize a new quiz bowl data set
         """
@@ -134,8 +136,7 @@ class QuizBowlDataset:
 
         if guesser_train and buzzer_train:
             print('Using QuizBowlDataset with guesser and buzzer training data, make sure you know what you are doing!')
-
-        self.db = QantaDatabase()
+        self.db = QantaDatabase(category=category)
         self.guesser_train = guesser_train
         self.buzzer_train = buzzer_train
 
