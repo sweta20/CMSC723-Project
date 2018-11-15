@@ -24,7 +24,7 @@ from collections import defaultdict
 from urllib import request
 import torch
 from torch.autograd import Variable
-
+import logging
 
 QuestionText = str
 Page = str
@@ -64,7 +64,7 @@ class ElmoModel(nn.Module):
         layer = torch.cat([layer_0, layer_1], 1)
         return self.classifier(layer)
 
-def batchify(x_data, y_data, batch_size=32, shuffle=False):
+def batchify(x_data, y_data, batch_size=10, shuffle=False):
     batches = []
     for i in range(0, len(x_data), batch_size):
         start, stop = i, i + batch_size
@@ -321,10 +321,10 @@ class ElmoGuesser():
         temp_prefix = get_tmp_filename()
         self.model_file = f'{temp_prefix}.pt'
         manager = TrainingManager([
-            BaseLogger(log_func=log.info), TerminateOnNaN(), EarlyStopping(monitor='test_acc', patience=10, verbose=1),
+            BaseLogger(log_func=logging.info), TerminateOnNaN(), EarlyStopping(monitor='test_acc', patience=10, verbose=1),
             MaxEpochStopping(100), ModelCheckpoint(create_save_model(self.model), self.model_file, monitor='test_acc')
         ])
-        log.info('Starting training')
+        logging.info('Starting training')
         epoch = 0
         while True:
             self.model.train()
@@ -340,7 +340,7 @@ class ElmoGuesser():
             )
 
             if stop_training:
-                log.info(' '.join(reasons))
+                logging.info(' '.join(reasons))
                 break
             else:
                 self.scheduler.step(test_acc)
@@ -353,8 +353,8 @@ class ElmoGuesser():
         for x_batch, y_batch, length_batch in batches:
             if train:
                 self.model.zero_grad()
-#             out = self.model(x_batch.cuda(), length_batch.cuda())
-            out = self.model(x_batch, length_batch)
+            out = self.model(x_batch.cuda(), length_batch.cuda())
+            #out = self.model(x_batch, length_batch)
             _, preds = torch.max(out, 1)
             accuracy = torch.mean(torch.eq(preds, y_batch).float()).data[0]
             batch_loss = self.criterion(out, y_batch)
@@ -374,8 +374,8 @@ class ElmoGuesser():
         batches = batchify(x_data, y_data, shuffle=False, batch_size=32)
         guesses = []
         for x_batch, y_batch, length_batch in batches:
-#             out = self.model(x_batch.cuda(), length_batch.cuda())
-            out = self.model(x_batch, length_batch)
+            out = self.model(x_batch.cuda(), length_batch.cuda())
+            #out = self.model(x_batch, length_batch)
             probs = F.softmax(out).data.cpu().numpy()
             preds = np.argsort(-probs, axis=1)
             n_examples = probs.shape[0]
