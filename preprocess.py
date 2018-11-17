@@ -3,6 +3,10 @@ from typing import List
 import string
 from nltk import word_tokenize
 from sklearn.model_selection import train_test_split
+import numpy
+import random
+import json
+from unidecode import unidecode
 
 ftp_patterns = {
     '\n',
@@ -23,6 +27,71 @@ patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
 
+# import wikipedia
+from typing import Set
+import nltk
+import re
+def extract_wiki_sentences(title, text, n_sentences, replace_title_mentions=''):
+    """
+    Extracts the first n_paragraphs from the text of a wikipedia page corresponding to the title.
+    strip_title_mentions and replace_title_mentions control handling of references to the title in text.
+    Oftentimes QA models learn *not* to answer entities mentioned in the question so this helps deal with this
+    in the domain adaptation case.
+
+    :param title: title of page
+    :param text: text of page
+    :param n_paragraphs: number of paragraphs to use
+    :param replace_title_mentions: Replace mentions with the provided string token, by default removing them
+    :return:
+    """
+    # Get simplest representation of title and text
+    title = unidecode(title).replace('_', ' ')
+    text = unidecode(text)
+
+    # Split on non-alphanumeric
+    title_words = re.split('[^a-zA-Z0-9]', title)
+    title_word_pattern = '|'.join(re.escape(w.lower()) for w in title_words)
+
+    # Breaking by newline yields paragraphs. Ignore the first since its always just the title
+    paragraphs = [p for p in text.split('\n') if len(p) != 0][1:]
+    sentences = []
+    for p in paragraphs:
+        formatted_text = re.sub(title_word_pattern, replace_title_mentions, p, flags=re.IGNORECASE)
+        # Cleanup whitespace
+        formatted_text = re.sub('\s+', ' ', formatted_text).strip()
+
+        sentences.extend(nltk.sent_tokenize(formatted_text))
+
+    return sentences[:n_sentences]
+
+class WikipediaDataset():
+    def __init__(self, answers: Set[str], n_sentences=5, replace_title_mentions=''):
+        super().__init__()
+        self.answers = answers
+        self.n_sentences = n_sentences
+        self.replace_title_mentions = replace_title_mentions
+
+    def training_data(self):
+        wiki_content = []
+        wiki_answers = []
+        wiki_lookup = None
+        with open("qanta-codalab/data/wiki_lookup.json") as f:
+            wiki_lookup = json.load(f)
+        for ans in self.answers:
+#             wiki_page = wikipedia.page( unidecode(ans).replace('_', ' '))
+            if ans not in wiki_lookup:
+                continue
+            wiki_page = wiki_lookup[ans]
+            if len(wiki_page["text"]) != 0:
+                sentences = extract_wiki_sentences(
+                    ans, wiki_page["text"], self.n_sentences,
+                    replace_title_mentions=self.replace_title_mentions
+                )
+                for sent in sentences:
+                    wiki_content.append([sent])
+                    wiki_answers.append(ans)
+
+        return wiki_content, wiki_answers, None
 
 def clean_question(question: str):
     """

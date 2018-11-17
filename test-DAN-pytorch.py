@@ -4,7 +4,7 @@
 # In[1]:
 
 
-from preprocess import preprocess_dataset, tokenize_question
+from preprocess import preprocess_dataset, tokenize_question, WikipediaDataset
 from dataset import QuizBowlDataset
 import collections
 import io
@@ -46,16 +46,49 @@ def transform_to_array(dataset, vocab, with_label=True):
         return [make_array(tokens, vocab)
                 for tokens in dataset]
 
-def get_quizbowl():
-    qb_dataset = QuizBowlDataset(guesser_train=True, buzzer_train=False)
+
+categories = {
+    0: ['History', 'Philosophy', 'Religion'],
+    1: ['Literature', 'Mythology'],
+    2: ['Science', 'Social Science'],
+    3: ['Current Events', 'Trash', 'Fine Arts', 'Geography']
+}
+
+def make_array(tokens, vocab, add_eos=True):
+    unk_id = vocab['<unk>']
+    eos_id = vocab['<eos>']
+    ids = [vocab.get(token, unk_id) for token in tokens]
+    if add_eos:
+        ids.append(eos_id)
+    return numpy.array(ids, 'i')
+
+
+def transform_to_array(dataset, vocab, with_label=True):
+    if with_label:
+        return [(make_array(tokens, vocab), numpy.array([cls], 'i'))
+                for tokens, cls in dataset]
+    else:
+        return [make_array(tokens, vocab)
+                for tokens in dataset]
+
+def get_quizbowl(guesser_train=True, buzzer_train=False, category = None, use_wiki=False, n_wiki_sentences = 5):
+    print("Loading data with guesser_train: " + str(guesser_train) + " buzzer_train:  " + str(buzzer_train))
+    qb_dataset = QuizBowlDataset(guesser_train=True, buzzer_train=False, category = category)
     training_data = qb_dataset.training_data()
+    
+    if use_wiki and n_wiki_sentences > 0:
+        print("Using wiki dataset with n_wiki_sentences: " + str(n_wiki_sentences))
+        wiki_dataset = WikipediaDataset(set(training_data[1]), n_wiki_sentences)
+        wiki_training_data = wiki_dataset.training_data()
+        training_data[0].extend(wiki_training_data[0])
+        training_data[1].extend(wiki_training_data[1])
     train_x, train_y, dev_x, dev_y, i_to_word, class_to_i, i_to_class = preprocess_dataset(training_data)
+    
     i_to_word = ['<unk>', '<eos>'] + sorted(i_to_word)
     word_to_i = {x: i for i, x in enumerate(i_to_word)}
     train = transform_to_array(zip(train_x, train_y), word_to_i)
     dev = transform_to_array(zip(dev_x, dev_y), word_to_i)
     return train, dev, word_to_i, i_to_class
-
 
 # In[9]:
 

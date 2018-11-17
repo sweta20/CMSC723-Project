@@ -126,7 +126,7 @@ class QantaDatabase:
         }
 
 class QuizBowlDataset:
-    def __init__(self, *, guesser_train=False, buzzer_train=False, category=None):
+    def __init__(self, *, guesser_train=False, buzzer_train=False, category=None, predict_category=False):
         """
         Initialize a new quiz bowl data set
         """
@@ -151,7 +151,10 @@ class QuizBowlDataset:
 
         for q in questions:
             training_examples.append(q.sentences)
-            training_pages.append(q.page)
+            if predict_category:
+                training_pages.append(q.category)
+            else:
+                training_pages.append(q.page)
 
         return training_examples, training_pages, None
 
