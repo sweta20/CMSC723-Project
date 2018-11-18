@@ -32,6 +32,8 @@ categories = {
 parser = argparse.ArgumentParser(description='SkinTone Embedding')
 parser.add_argument('--full_question', type=bool, default=False,
                     help='Use full question (default: False)')
+parser.add_argument('--create_runs', type=bool, default=False,
+                    help='Use full question (default: False)')
 parser.add_argument('--category', type=int, default=None,
                     help='''categories = {
                             0: ['History', 'Philosophy', 'Religion'],
@@ -45,7 +47,7 @@ parser.add_argument('--n_wiki_sentences', type=int, default=5,
                     help='n_wiki_sentences (default: 5)')
 
 
-def get_quizbowl(guesser_train=True, buzzer_train=False, full_question=False, category=None, use_wiki=False, n_wiki_sentences = 5):
+def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki=False, n_wiki_sentences = 5):
     print("Loading data with guesser_train: " + str(guesser_train) + " buzzer_train:  " + str(buzzer_train))
     qb_dataset = QuizBowlDataset(guesser_train=guesser_train, buzzer_train=buzzer_train, category=category)
     training_data = qb_dataset.training_data()
@@ -90,7 +92,7 @@ class ElmoGuesser():
 
 
     def train(self, training_data: TrainingData) -> None:
-        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data)
+        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
 
@@ -192,7 +194,7 @@ class ElmoGuesser():
         with open(os.path.join(directory, 'elmo.pkl'), 'rb') as f:
             params = cloudpickle.load(f)
 
-        guesser = ElmoGuesser(params['config_num'])
+        guesser = ElmoGuesser()
         guesser.class_to_i = params['class_to_i']
         guesser.i_to_class = params['i_to_class']
         guesser.random_seed = params['random_seed']
@@ -207,7 +209,7 @@ class ElmoGuesser():
 
     def save(self, directory: str) -> None:
         shutil.copyfile(self.model_file, os.path.join(directory, 'elmo.pt'))
-        shell(f'rm -f {self.model_file}')
+       # shell(f'rm -f {self.model_file}')
         with open(os.path.join(directory, 'elmo.pkl'), 'wb') as f:
             cloudpickle.dump({
                 'class_to_i': self.class_to_i,
@@ -222,7 +224,7 @@ def main():
     args = parser.parse_args()
     category = categories[args.category] if args.category is not None else None
 
-    training_data = get_quizbowl(full_question=args.full_question, category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
+    training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
 
     elm = ElmoGuesser()
     elm.train(training_data)
