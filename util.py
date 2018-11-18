@@ -2,12 +2,25 @@ import abc
 from collections import defaultdict
 from typing import List, Tuple, Optional
 from urllib import request
-
 import numpy as np
 import torch
 from torch.autograd import Variable
 import logging
 import tempfile
+from typing import Tuple, List, Any, Dict, Optional
+import abc
+
+QuestionText = str
+Page = str
+Evidence = Dict[str, Any]
+TrainingData = Tuple[List[List[QuestionText]], List[Page], Optional[List[Evidence]]]
+
+
+def create_save_model(model):
+    def save_model(path):
+        torch.save(model, path)
+    return save_model
+
 
 def get_tmp_filename(dir="./"):
     with tempfile.NamedTemporaryFile('w', delete=True, dir=dir) as f:
