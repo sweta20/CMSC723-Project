@@ -17,34 +17,11 @@ import time
 from torch.utils.data import Dataset
 from torch.nn.utils import clip_grad_norm_
 
-
-# In[8]:
-
-
-
-categories = {
-    0: ['History', 'Philosophy', 'Religion'],
-    1: ['Literature', 'Mythology'],
-    2: ['Science', 'Social Science'],
-    3: ['Current Events', 'Trash', 'Fine Arts', 'Geography']
-}
-
-def make_array(tokens, vocab, add_eos=True):
-    unk_id = vocab['<unk>']
-    eos_id = vocab['<eos>']
-    ids = [vocab.get(token, unk_id) for token in tokens]
-    if add_eos:
-        ids.append(eos_id)
-    return numpy.array(ids, 'i')
-
-
-def transform_to_array(dataset, vocab, with_label=True):
-    if with_label:
-        return [(make_array(tokens, vocab), numpy.array([cls], 'i'))
-                for tokens, cls in dataset]
-    else:
-        return [make_array(tokens, vocab)
-                for tokens in dataset]
+#hyperparams predefined TODO-> add option to pass arguments through commandline
+grad_clipping = 5
+save_model = "dan_1.pt"
+checkpoint = 100
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 categories = {
@@ -90,9 +67,6 @@ def get_quizbowl(guesser_train=True, buzzer_train=False, category = None, use_wi
     dev = transform_to_array(zip(dev_x, dev_y), word_to_i)
     return train, dev, word_to_i, i_to_class
 
-# In[9]:
-
-
 def evaluate(data_loader, model, device):
     """
     evaluate the current model, get the accuracy for dev/test set
@@ -124,10 +98,6 @@ def evaluate(data_loader, model, device):
         print('accuracy', accuracy)
     return accuracy
 
-
-# In[10]:
-
-
 def load_glove(filename):
     idx = 0
     word2idx = {}
@@ -143,10 +113,6 @@ def load_glove(filename):
             vectors.append(vect)
 
     return word2idx, vectors
-
-
-# In[11]:
-
 
 class DanModel(nn.Module):
     """High level model that handles intializing the underlying network
@@ -196,13 +162,6 @@ class DanModel(nn.Module):
             return logits
 
 
-# In[13]:
-
-
-grad_clipping = 5
-save_model = "dan_1.pt"
-checkpoint = 100
- 
 def train_model(model, train_data_loader, dev_data_loader, accuracy, device):
     """
     Train the current model
@@ -251,10 +210,6 @@ def train_model(model, train_data_loader, dev_data_loader, accuracy, device):
                 accuracy = curr_accuracy
     return accuracy
 
-
-# In[14]:
-
-
 def batchify(batch):
     """
     Gather a batch of individual examples into one batch, 
@@ -278,147 +233,83 @@ def batchify(batch):
     q_batch = {'text': x1, 'len': torch.FloatTensor(question_len), 'labels': target_labels}
     return q_batch
 
-
-# In[15]:
-
-
-train, dev, vocab, answers = get_quizbowl()
-random.shuffle(train)
-random.shuffle(dev)
-n_vocab = len(vocab)
-n_class = len(set([int(d[1]) for d in train]))
-print('# train data: {}'.format(len(train)))
-print('# dev data: {}'.format(len(dev)))
-
-
-# In[16]:
-
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-# In[17]:
-
-
-model = DanModel(len(answers), len(vocab))
-model.to(device)
-
-
-# In[18]:
-
-
-glove_word2idx, glove_vectors = load_glove("glove/glove.6B.300d.txt")
-
-
-# In[19]:
-
-
-for word, emb_index in vocab.items():
-    if word.lower() in glove_word2idx:
-        glove_index = glove_word2idx[word.lower()]
-        glove_vec = torch.FloatTensor(glove_vectors[glove_index])
-        glove_vec = glove_vec.cuda()
-
-        model.embeddings.weight.data[emb_index, :].set_(glove_vec)
-
-
-# In[20]:
-
-
-batch_size = 32
-train_sampler = torch.utils.data.sampler.RandomSampler(train)
-dev_sampler = torch.utils.data.sampler.SequentialSampler(dev)
-dev_loader = torch.utils.data.DataLoader(dev, batch_size=batch_size,
-                                               sampler=dev_sampler, num_workers=0,
-                                               collate_fn=batchify)
-
-
-# In[21]:
-
-
-num_epochs = 1000
-accuracy = 0
-for epoch in range(num_epochs):
-    print('start epoch %d' % epoch)
-    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size,
-                                       sampler=train_sampler, num_workers=0,
-                                       collate_fn=batchify)
-    accuracy = train_model(model, train_loader, dev_loader, accuracy, device)
-
-
-# In[ ]:
-
-
-model = torch.load(save_model)
-
-
-# In[ ]:
-
-
-
-model = torch.load(save_model)
-#### Load batchifed dataset
-print('start testing on dev set:\n')
-
-dev_sampler = torch.utils.data.sampler.SequentialSampler(dev)
-dev_loader = torch.utils.data.DataLoader(dev, batch_size=batch_size,
-                                       sampler=dev_sampler, num_workers=0,
-                                       collate_fn=batchify)
-evaluate(dev_loader, model, device)
-
-
-# In[ ]:
-
-
-batch = next(iter(dev_loader))
-
-
-# In[ ]:
-
-
-model.eval()
-question_text = batch['text'].to(device)
-question_len = batch['len'].to(device)
-labels = batch['labels'].to(device)
-####Your code here
-logits = model(question_text, question_len)
-top_n, top_i = logits.topk(1)
-
-
-# In[ ]:
-
-
-q = "Name the inventor of general relativity and the photoelectric effect"
-
-
-# In[ ]:
-
-
-x_data = [tokenize_question(q)]
-x_data = transform_to_array(x_data, vocab, with_label=False)
-
-question_len = list()
-for ex in x_data:
-    question_len.append(len(ex))
-x1 = torch.LongTensor(len(question_len), max(question_len)).zero_()
-question_text = x_data[0]
-vec = torch.LongTensor(question_text)
-x1[0, :len(question_text)].copy_(vec)
-q_batch = {'text': x1, 'len': torch.FloatTensor(question_len)}
-
-prob = model(q_batch['text'].to(device), q_batch['len'].to(device))
-top_n, top_i = prob.topk(1)
-print(answers[top_i.cpu().data[0].numpy()[0]])
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
+def main():
+
+     
+    train, dev, vocab, answers = get_quizbowl()
+    random.shuffle(train)
+    random.shuffle(dev)
+    n_vocab = len(vocab)
+    n_class = len(set([int(d[1]) for d in train]))
+    print('# train data: {}'.format(len(train)))
+    print('# dev data: {}'.format(len(dev))) 
+
+    # Model 
+    model = DanModel(len(answers), len(vocab))
+    model.to(device)
+
+    # Using Glove embeddings
+    glove_word2idx, glove_vectors = load_glove("glove/glove.6B.300d.txt")
+    for word, emb_index in vocab.items():
+        if word.lower() in glove_word2idx:
+            glove_index = glove_word2idx[word.lower()]
+            glove_vec = torch.FloatTensor(glove_vectors[glove_index])
+            glove_vec = glove_vec.cuda()
+
+            model.embeddings.weight.data[emb_index, :].set_(glove_vec)
+
+
+    #Creating data loader
+    batch_size = 32
+    train_sampler = torch.utils.data.sampler.RandomSampler(train)
+    dev_sampler = torch.utils.data.sampler.SequentialSampler(dev)
+    dev_loader = torch.utils.data.DataLoader(dev, batch_size=batch_size,
+                                                   sampler=dev_sampler, num_workers=0,
+                                                   collate_fn=batchify)
+
+    # Running training instance
+    num_epochs = 1000
+    accuracy = 0
+    for epoch in range(num_epochs):
+        print('start epoch %d' % epoch)
+        train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size,
+                                           sampler=train_sampler, num_workers=0,
+                                           collate_fn=batchify)
+        accuracy = train_model(model, train_loader, dev_loader, accuracy, device)
+
+    model = torch.load(save_model)
+
+
+    # Testing code  ...
+    """
+    model = torch.load(save_model)
+    print('start testing on dev set:\n')
+
+    dev_sampler = torch.utils.data.sampler.SequentialSampler(dev)
+    dev_loader = torch.utils.data.DataLoader(dev, batch_size=batch_size,
+                                           sampler=dev_sampler, num_workers=0,
+                                           collate_fn=batchify)
+    evaluate(dev_loader, model, device)
+
+    q = "Name the inventor of general relativity and the photoelectric effect"
+    x_data = [tokenize_question(q)]
+    x_data = transform_to_array(x_data, vocab, with_label=False)
+
+    question_len = list()
+    for ex in x_data:
+        question_len.append(len(ex))
+    x1 = torch.LongTensor(len(question_len), max(question_len)).zero_()
+    question_text = x_data[0]
+    vec = torch.LongTensor(question_text)
+    x1[0, :len(question_text)].copy_(vec)
+    q_batch = {'text': x1, 'len': torch.FloatTensor(question_len)}
+
+    prob = model(q_batch['text'].to(device), q_batch['len'].to(device))
+    top_n, top_i = prob.topk(1)
+    print(answers[top_i.cpu().data[0].numpy()[0]])
+
+    """
+
+
+if __name__ == '__main__':
+    main()

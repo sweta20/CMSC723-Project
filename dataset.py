@@ -139,6 +139,7 @@ class QuizBowlDataset:
         self.db = QantaDatabase(category=category)
         self.guesser_train = guesser_train
         self.buzzer_train = buzzer_train
+        self.predict_category = predict_category
 
     def training_data(self):
         training_examples = []
@@ -151,7 +152,7 @@ class QuizBowlDataset:
 
         for q in questions:
             training_examples.append(q.sentences)
-            if predict_category:
+            if self.predict_category:
                 training_pages.append(q.category)
             else:
                 training_pages.append(q.page)
