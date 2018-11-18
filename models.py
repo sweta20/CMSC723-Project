@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from torch.autograd import Variable
 from torch.optim import Adam, lr_scheduler
 from allennlp.modules.elmo import Elmo, batch_to_ids
+import torch
 
 ELMO_OPTIONS_FILE = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json"
 ELMO_WEIGHTS_FILE = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5"
