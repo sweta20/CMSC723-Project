@@ -7,6 +7,9 @@ import numpy
 import random
 import json
 from unidecode import unidecode
+from typing import Set
+import nltk
+import re
 
 ftp_patterns = {
     '\n',
@@ -27,10 +30,6 @@ patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
 
-# import wikipedia
-from typing import Set
-import nltk
-import re
 def extract_wiki_sentences(title, text, n_sentences, replace_title_mentions=''):
     """
     Extracts the first n_paragraphs from the text of a wikipedia page corresponding to the title.
@@ -184,15 +183,16 @@ def preprocess_dataset(data, train_size=.9, test_size=.1,
         q_text = []
         for sentence in q:
             t_question = tokenize_question(sentence)
-            if create_runs or full_question:
-                q_text.extend(t_question)
+            if len(t_question) > 0:
+                if create_runs or full_question:
+                    q_text.extend(t_question)
+                    if not full_question:
+                        x_test.append(list(q_text))
+                else:
+                    q_text = t_question
+                    x_test.append(q_text)
                 if not full_question:
-                    x_test.append(list(q_text))
-            else:
-                q_text = t_question
-                x_test.append(q_text)
-            if not full_question:
-                y_test.append(class_to_i[ans])
+                    y_test.append(class_to_i[ans])
         if full_question:
             x_test.append(q_text)
             y_test.append(class_to_i[ans])
