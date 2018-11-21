@@ -2,7 +2,7 @@
 from preprocess import preprocess_dataset, WikipediaDataset
 from dataset import QuizBowlDataset
 from util import create_save_model
-from models import ElmoModel
+from models import DanModel
 from util import BaseLogger, TerminateOnNaN, EarlyStopping, ModelCheckpoint, MaxEpochStopping, TrainingManager
 from util import get, get_tmp_filename
 from util import QuestionText, TrainingData, Page, Evidence
@@ -16,9 +16,9 @@ import random
 import time
 import cloudpickle
 import torch
+from torch.utils.data import DataLoader
+from  torch.utils.data.sampler import SequentialSampler, RandomSampler
 import torch.nn as nn
-import torch
-from allennlp.modules.elmo import Elmo, batch_to_ids
 from torch.autograd import Variable
 from torch.optim import Adam, lr_scheduler
 
@@ -29,7 +29,7 @@ categories = {
     3: ['Current Events', 'Trash', 'Fine Arts', 'Geography']
 }
 
-parser = argparse.ArgumentParser(description='ELMO training')
+parser = argparse.ArgumentParser(description='DAN training')
 parser.add_argument('--full_question', type=bool, default=False,
                     help='Use full question (default: False)')
 parser.add_argument('--create_runs', type=bool, default=False,
@@ -45,7 +45,28 @@ parser.add_argument('--use_wiki', type=bool, default=False,
                     help='use_wiki (default: False)')
 parser.add_argument('--n_wiki_sentences', type=int, default=5,
                     help='n_wiki_sentences (default: 5)')
+parser.add_argument('--batch_size', type=int, default=32,
+                    help='batch_size (default: 32)')
+parser.add_argument('--save_model', type=str, default="dan.pt",
+                    help='save_model (default: dan.pt)')
 
+
+def make_array(tokens, vocab, add_eos=True):
+    unk_id = vocab['<unk>']
+    eos_id = vocab['<eos>']
+    ids = [vocab.get(token, unk_id) for token in tokens]
+    if add_eos:
+        ids.append(eos_id)
+    return np.array(ids, 'i')
+
+
+def transform_to_array(dataset, vocab, with_label=True):
+    if with_label:
+        return [(make_array(tokens, vocab), np.array([cls], 'i'))
+                for tokens, cls in dataset]
+    else:
+        return [make_array(tokens, vocab)
+                for tokens in dataset]
 
 def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki=False, n_wiki_sentences = 5):
     print("Loading data with guesser_train: " + str(guesser_train) + " buzzer_train:  " + str(buzzer_train))
@@ -60,26 +81,49 @@ def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki
         training_data[1].extend(wiki_training_data[1])
     return training_data
 
-def batchify(x_data, y_data, batch_size=32, shuffle=False):
-    batches = []
-    for i in range(0, len(x_data), batch_size):
-        start, stop = i, i + batch_size
-        x_batch = batch_to_ids(x_data[start:stop])
-        lengths = Variable(torch.from_numpy(np.array([max(len(x), 1) for x in x_data[start:stop]])).float()).view(-1, 1)
-        y_batch = Variable(torch.from_numpy(np.array(y_data[start:stop])))
-        batches.append((x_batch, y_batch, lengths))
+def load_glove(filename):
+    idx = 0
+    word2idx = {}
+    vectors = []
 
-    if shuffle:
-        random.shuffle(batches)
+    with open(filename, 'rb') as f:
+        for l in f:
+            line = l.decode().split()
+            word = line[0]
+            word2idx[word] = idx
+            idx += 1
+            vect = np.array(line[1:]).astype(np.float)
+            vectors.append(vect)
 
-    return batches
+    return word2idx, vectors
 
-class ElmoGuesser():
+def batchify(batch):
+    """
+    Gather a batch of individual examples into one batch, 
+    which includes the question text, question length and labels 
+
+    Keyword arguments:
+    batch: list of outputs from vectorize function
+    """
+
+    question_len = list()
+    label_list = list()
+    for ex in batch:
+        question_len.append(len(ex[0]))
+        label_list.append(ex[1])
+    target_labels = torch.LongTensor(label_list)
+    x1 = torch.LongTensor(len(question_len), max(question_len)).zero_()
+    for i in range(len(question_len)):
+        question_text = batch[i][0]
+        vec = torch.LongTensor(question_text)
+        x1[i, :len(question_text)].copy_(vec)
+    q_batch = {'text': x1, 'len': torch.FloatTensor(question_len), 'labels': target_labels}
+    return q_batch
+
+
+class DANGuesser():
     def __init__(self):
-        super(ElmoGuesser, self).__init__()
-        self.random_seed = 1
-        self.dropout = 0.5
-
+        super(DANGuesser, self).__init__()
         self.model = None
         self.i_to_class = None
         self.class_to_i = None
@@ -92,20 +136,39 @@ class ElmoGuesser():
 
 
     def train(self, training_data: TrainingData) -> None:
-        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs)
+        x_train, y_train, x_val, y_val, i_to_word, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
 
         print('Batchifying data')
-        train_batches = batchify(x_train, y_train, shuffle=True)
-        val_batches = batchify(x_val, y_val, shuffle=False)
-        self.model = ElmoModel(len(i_to_class), dropout=self.dropout)
+        i_to_word = ['<unk>', '<eos>'] + sorted(i_to_word)
+        word_to_i = {x: i for i, x in enumerate(i_to_word)}
+        train = transform_to_array(zip(x_train, y_train), word_to_i)
+        dev = transform_to_array(zip(x_val, y_val), word_to_i)
+
+        train_sampler = RandomSampler(train)
+        dev_sampler = SequentialSampler(dev)
+        dev_loader = DataLoader(dev, batch_size=args.batch_size,
+                                                   sampler=dev_sampler, num_workers=0,
+                                                   collate_fn=batchify)
+        train_loader = DataLoader(train, batch_size=args.batch_size,
+                                           sampler=train_sampler, num_workers=0,
+                                           collate_fn=batchify)
+
+        self.model = DanModel(len(i_to_class), len(i_to_word))
         self.model = self.model.to(self.device)
         
+        print(f'Loading GloVe')
+        glove_word2idx, glove_vectors = load_glove("glove/glove.6B.300d.txt")
+        for word, emb_index in vocab.items():
+            if word.lower() in glove_word2idx:
+                glove_index = glove_word2idx[word.lower()]
+                glove_vec = torch.FloatTensor(glove_vectors[glove_index])
+                glove_vec = glove_vec.cuda()
+                self.model.embeddings.weight.data[emb_index, :].set_(glove_vec)
+
+
         print(f'Model:\n{self.model}')
-        parameters = list(self.model.classifier.parameters())
-        for mix in self.model.elmo._scalar_mixes:
-            parameters.extend(list(mix.parameters()))
         self.optimizer = Adam(parameters)
         self.criterion = nn.CrossEntropyLoss()
         self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, verbose=True, mode='max')
@@ -126,11 +189,10 @@ class ElmoGuesser():
         epoch = 0
         while True:
             self.model.train()
-            train_acc, train_loss, train_time = self.run_epoch(train_batches)
-            random.shuffle(train_batches)
+            train_acc, train_loss, train_time = self.run_epoch(train_loader)
 
             self.model.eval()
-            test_acc, test_loss, test_time = self.run_epoch(val_batches, train=False)
+            test_acc, test_loss, test_time = self.run_epoch(val_loader, train=False)
 
             stop_training, reasons = manager.instruct(
                 train_time, train_loss, train_acc,
@@ -144,11 +206,14 @@ class ElmoGuesser():
                 self.scheduler.step(test_acc)
             epoch += 1
 
-    def run_epoch(self, batches, train=True):
+    def run_epoch(self, data_loader, train=True):
         batch_accuracies = []
         batch_losses = []
         epoch_start = time.time()
-        for x_batch, y_batch, length_batch in batches:
+        for idx, batch in enumerate(data_loader):
+            question_text = batch['text'].to(device)
+            question_len = batch['len'].to(device)
+            labels = batch['labels'].to(device)
             if train:
                 self.model.zero_grad()
             y_batch = y_batch.to(self.device)
@@ -174,7 +239,7 @@ class ElmoGuesser():
         for x_batch, y_batch, length_batch in batches:
             y_batch = y_batch.to(self.device)
             out = self.model(x_batch.to(self.device), length_batch.to(self.device))
-            probs = F.softmax(out).data.cpu().numpy()
+            probs = F.softmax(out).cpu().numpy()
             preds = np.argsort(-probs, axis=1)
             n_examples = probs.shape[0]
             for i in range(n_examples):
@@ -187,35 +252,30 @@ class ElmoGuesser():
 
     @classmethod
     def targets(cls) -> List[str]:
-        return ['elmo.pt', 'elmo.pkl']
+        return ['dan.pt', 'dan.pkl']
 
     @classmethod
     def load(cls, directory: str):
-        with open(os.path.join(directory, 'elmo.pkl'), 'rb') as f:
+        with open(os.path.join(directory, 'dan.pkl'), 'rb') as f:
             params = cloudpickle.load(f)
 
-        guesser = ElmoGuesser()
+        guesser = DANGuesser()
         guesser.class_to_i = params['class_to_i']
         guesser.i_to_class = params['i_to_class']
-        guesser.random_seed = params['random_seed']
-        guesser.dropout = params['dropout']
-        guesser.model = ElmoModel(len(guesser.i_to_class))
+        guesser.model = DANModel(len(guesser.i_to_class))
         guesser.model.load_state_dict(torch.load(
-            os.path.join(directory, 'elmo.pt'), map_location=lambda storage, loc: storage
+            os.path.join(directory, 'dan.pt'), map_location=lambda storage, loc: storage
         ))
         guesser.model.eval()
         guesser.model = guesser.model.to(self.device)
         return guesser
 
     def save(self, directory: str) -> None:
-        shutil.copyfile(self.model_file, os.path.join(directory, 'elmo.pt'))
-       # shell(f'rm -f {self.model_file}')
-        with open(os.path.join(directory, 'elmo.pkl'), 'wb') as f:
+        shutil.copyfile(self.model_file, os.path.join(directory, 'dan.pt'))
+        with open(os.path.join(directory, 'dan.pkl'), 'wb') as f:
             cloudpickle.dump({
                 'class_to_i': self.class_to_i,
-                'i_to_class': self.i_to_class,
-                'random_seed': self.random_seed,
-                'dropout': self.dropout
+                'i_to_class': self.i_to_class
             }, f)
 
 def main():
@@ -226,10 +286,10 @@ def main():
 
     training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
 
-    elm = ElmoGuesser()
-    elm.train(training_data)
+    dan = DANGuesser()
+    dan.train(training_data)
 
-    elm.save("./")
+    dan.save("./")
 
 
 if __name__ == '__main__':
