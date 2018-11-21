@@ -168,7 +168,7 @@ class DANGuesser():
                 glove_index = glove_word2idx[word.lower()]
                 glove_vec = torch.FloatTensor(glove_vectors[glove_index])
                 glove_vec = glove_vec.cuda()
-                self.model.embeddings.weight.data[emb_index, :].set_(glove_vec)
+                self.model.text_embeddings.weight.data[emb_index, :].set_(glove_vec)
 
 
         print(f'Model:\n{self.model}')
