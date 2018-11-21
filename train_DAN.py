@@ -143,8 +143,8 @@ class DANGuesser():
         x_train, y_train, x_val, y_val, i_to_word, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
-
-        print('Batchifying data')
+        log = get(__name__)
+        log.info('Batchifying data')
         i_to_word = ['<unk>', '<eos>'] + sorted(i_to_word)
         word_to_i = {x: i for i, x in enumerate(i_to_word)}
         self.word_to_i = word_to_i
@@ -161,7 +161,7 @@ class DANGuesser():
         self.model = DanModel(len(i_to_class), len(i_to_word))
         self.model = self.model.to(self.device)
         
-        print(f'Loading GloVe')
+        log.info(f'Loading GloVe')
         glove_word2idx, glove_vectors = load_glove("glove/glove.6B.300d.txt")
         for word, emb_index in word_to_i.items():
             if word.lower() in glove_word2idx:
@@ -171,8 +171,8 @@ class DANGuesser():
                 self.model.text_embeddings.weight.data[emb_index, :].set_(glove_vec)
 
 
-        print(f'Model:\n{self.model}')
-        self.optimizer = Adam(parameters)
+        log.info(f'Model:\n{self.model}')
+        self.optimizer = Adam(self.model.parameters())
         self.criterion = nn.CrossEntropyLoss()
         self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, verbose=True, mode='max')
 
@@ -214,9 +214,9 @@ class DANGuesser():
         batch_losses = []
         epoch_start = time.time()
         for idx, batch in enumerate(data_loader):
-            question_text = batch['text'].to(self.device)
-            question_len = batch['len'].to(self.device)
-            labels = batch['labels'].to(self.device)
+            x_batch = batch['text'].to(self.device)
+            length_batch = batch['len'].to(self.device)
+            y_batch = batch['labels'].to(self.device)
             if train:
                 self.model.zero_grad()
             y_batch = y_batch.to(self.device)
