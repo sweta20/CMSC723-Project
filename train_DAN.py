@@ -29,6 +29,9 @@ categories = {
     3: ['Current Events', 'Trash', 'Fine Arts', 'Geography']
 }
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 parser = argparse.ArgumentParser(description='DAN training')
 parser.add_argument('--full_question', type=bool, default=False,
                     help='Use full question (default: False)')
@@ -97,28 +100,6 @@ def load_glove(filename):
 
     return word2idx, vectors
 
-def batchify(batch):
-    """
-    Gather a batch of individual examples into one batch, 
-    which includes the question text, question length and labels 
-
-    Keyword arguments:
-    batch: list of outputs from vectorize function
-    """
-
-    question_len = list()
-    label_list = list()
-    for ex in batch:
-        question_len.append(len(ex[0]))
-        label_list.append(ex[1])
-    target_labels = torch.LongTensor(label_list)
-    x1 = torch.LongTensor(len(question_len), max(question_len)).zero_()
-    for i in range(len(question_len)):
-        question_text = batch[i][0]
-        vec = torch.LongTensor(question_text)
-        x1[i, :len(question_text)].copy_(vec)
-    q_batch = {'text': x1, 'len': torch.FloatTensor(question_len), 'labels': target_labels}
-    return q_batch
 
 
 class DANGuesser():
@@ -134,6 +115,29 @@ class DANGuesser():
         self.model_file = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    def batchify(self, batch):
+        """
+        Gather a batch of individual examples into one batch, 
+        which includes the question text, question length and labels 
+
+        Keyword arguments:
+        batch: list of outputs from vectorize function
+        """
+        batch = transform_to_array(batch, self.word_to_i)
+        question_len = list()
+        label_list = list()
+        for ex in batch:
+            question_len.append(len(ex[0]))
+            label_list.append(ex[1])
+        target_labels = torch.LongTensor(label_list)
+        x1 = torch.LongTensor(len(question_len), max(question_len)).zero_()
+        for i in range(len(question_len)):
+            question_text = batch[i][0]
+            vec = torch.LongTensor(question_text)
+            x1[i, :len(question_text)].copy_(vec)
+        q_batch = {'text': x1, 'len': torch.FloatTensor(question_len), 'labels': target_labels}
+        return q_batch
+
 
     def train(self, training_data: TrainingData) -> None:
         x_train, y_train, x_val, y_val, i_to_word, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs)
@@ -143,24 +147,23 @@ class DANGuesser():
         print('Batchifying data')
         i_to_word = ['<unk>', '<eos>'] + sorted(i_to_word)
         word_to_i = {x: i for i, x in enumerate(i_to_word)}
-        train = transform_to_array(zip(x_train, y_train), word_to_i)
-        dev = transform_to_array(zip(x_val, y_val), word_to_i)
+        self.word_to_i = word_to_i
 
-        train_sampler = RandomSampler(train)
-        dev_sampler = SequentialSampler(dev)
-        dev_loader = DataLoader(dev, batch_size=args.batch_size,
+        train_sampler = RandomSampler(list(zip(x_train, y_train)))
+        dev_sampler = RandomSampler(list(zip(x_val, y_val)))
+        dev_loader = DataLoader(list(zip(x_val, y_val)), batch_size=args.batch_size,
                                                    sampler=dev_sampler, num_workers=0,
-                                                   collate_fn=batchify)
-        train_loader = DataLoader(train, batch_size=args.batch_size,
+                                                   collate_fn=self.batchify)
+        train_loader = DataLoader(list(zip(x_train, y_train)), batch_size=args.batch_size,
                                            sampler=train_sampler, num_workers=0,
-                                           collate_fn=batchify)
+                                           collate_fn=self.batchify)
 
         self.model = DanModel(len(i_to_class), len(i_to_word))
         self.model = self.model.to(self.device)
         
         print(f'Loading GloVe')
         glove_word2idx, glove_vectors = load_glove("glove/glove.6B.300d.txt")
-        for word, emb_index in vocab.items():
+        for word, emb_index in word_to_i.items():
             if word.lower() in glove_word2idx:
                 glove_index = glove_word2idx[word.lower()]
                 glove_vec = torch.FloatTensor(glove_vectors[glove_index])
@@ -211,9 +214,9 @@ class DANGuesser():
         batch_losses = []
         epoch_start = time.time()
         for idx, batch in enumerate(data_loader):
-            question_text = batch['text'].to(device)
-            question_len = batch['len'].to(device)
-            labels = batch['labels'].to(device)
+            question_text = batch['text'].to(self.device)
+            question_len = batch['len'].to(self.device)
+            labels = batch['labels'].to(self.device)
             if train:
                 self.model.zero_grad()
             y_batch = y_batch.to(self.device)
