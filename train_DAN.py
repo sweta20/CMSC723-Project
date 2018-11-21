@@ -1,4 +1,4 @@
-
+from tqdm import tqdm
 from preprocess import preprocess_dataset, WikipediaDataset
 from dataset import QuizBowlDataset
 from util import create_save_model
@@ -128,7 +128,7 @@ class DANGuesser():
         label_list = list()
         for ex in batch:
             question_len.append(len(ex[0]))
-            label_list.append(ex[1])
+            label_list.append(ex[1][0])
         target_labels = torch.LongTensor(label_list)
         x1 = torch.LongTensor(len(question_len), max(question_len)).zero_()
         for i in range(len(question_len)):
@@ -143,7 +143,7 @@ class DANGuesser():
         x_train, y_train, x_val, y_val, i_to_word, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
-        log = get(__name__)
+        log = get(__name__, "dan.log")
         log.info('Batchifying data')
         i_to_word = ['<unk>', '<eos>'] + sorted(i_to_word)
         word_to_i = {x: i for i, x in enumerate(i_to_word)}
@@ -213,7 +213,7 @@ class DANGuesser():
         batch_accuracies = []
         batch_losses = []
         epoch_start = time.time()
-        for idx, batch in enumerate(data_loader):
+        for idx, batch in tqdm(enumerate(data_loader)):
             x_batch = batch['text'].to(self.device)
             length_batch = batch['len'].to(self.device)
             y_batch = batch['labels'].to(self.device)
