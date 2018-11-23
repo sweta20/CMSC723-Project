@@ -1,5 +1,5 @@
 from tqdm import tqdm
-from preprocess import preprocess_dataset, WikipediaDataset
+from preprocess import preprocess_dataset, WikipediaDataset, tokenize_question
 from dataset import QuizBowlDataset
 from util import create_save_model
 from models import DanModel
@@ -17,10 +17,12 @@ import time
 import cloudpickle
 import torch
 from torch.utils.data import DataLoader
-from  torch.utils.data.sampler import SequentialSampler, RandomSampler
+from torch.utils.data.sampler import SequentialSampler, RandomSampler
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.optim import Adam, lr_scheduler
+import torch.nn.functional as F
+
 
 categories = {
     0: ['History', 'Philosophy', 'Religion'],
@@ -30,7 +32,6 @@ categories = {
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 parser = argparse.ArgumentParser(description='DAN training')
 parser.add_argument('--full_question', type=bool, default=False,
@@ -73,11 +74,12 @@ def transform_to_array(dataset, vocab, with_label=True):
         return [make_array(tokens, vocab)
                 for tokens in dataset]
 
-def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki=False, n_wiki_sentences = 5):
+
+def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki=False, n_wiki_sentences=5):
     print("Loading data with guesser_train: " + str(guesser_train) + " buzzer_train:  " + str(buzzer_train))
     qb_dataset = QuizBowlDataset(guesser_train=guesser_train, buzzer_train=buzzer_train, category=category)
     training_data = qb_dataset.training_data()
-    
+
     if use_wiki and n_wiki_sentences > 0:
         print("Using wiki dataset with n_wiki_sentences: " + str(n_wiki_sentences))
         wiki_dataset = WikipediaDataset(set(training_data[1]), n_wiki_sentences)
@@ -85,6 +87,7 @@ def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki
         training_data[0].extend(wiki_training_data[0])
         training_data[1].extend(wiki_training_data[1])
     return training_data
+
 
 def load_glove(filename):
     idx = 0
@@ -101,7 +104,6 @@ def load_glove(filename):
             vectors.append(vect)
 
     return word2idx, vectors
-
 
 
 class DANGuesser():
@@ -140,31 +142,35 @@ class DANGuesser():
         q_batch = {'text': x1, 'len': torch.FloatTensor(question_len), 'labels': target_labels}
         return q_batch
 
-
     def train(self, training_data: TrainingData) -> None:
-        x_train, y_train, x_val, y_val, i_to_word, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs)
+        x_train, y_train, x_val, y_val, i_to_word, class_to_i, i_to_class = preprocess_dataset(training_data,
+                                                                                               full_question=args.full_question,
+                                                                                               create_runs=args.create_runs)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
-        log = get(__name__, "dan.log")
-        log.info('Batchifying data')
+        # log = get(__name__, "dan.log")
+        # log.info('Batchifying data')
+        print('Batchifying data')
         i_to_word = ['<unk>', '<eos>'] + sorted(i_to_word)
         word_to_i = {x: i for i, x in enumerate(i_to_word)}
         self.word_to_i = word_to_i
-        log.info('Vocab len: ' + str(len(self.word_to_i)))
+        # log.info('Vocab len: ' + str(len(self.word_to_i)))
+        print('Vocab len: ' + str(len(self.word_to_i)))
 
         train_sampler = RandomSampler(list(zip(x_train, y_train)))
         dev_sampler = RandomSampler(list(zip(x_val, y_val)))
         dev_loader = DataLoader(list(zip(x_val, y_val)), batch_size=args.batch_size,
-                                                   sampler=dev_sampler, num_workers=0,
-                                                   collate_fn=self.batchify)
+                                sampler=dev_sampler, num_workers=0,
+                                collate_fn=self.batchify)
         train_loader = DataLoader(list(zip(x_train, y_train)), batch_size=args.batch_size,
-                                           sampler=train_sampler, num_workers=0,
-                                           collate_fn=self.batchify)
+                                  sampler=train_sampler, num_workers=0,
+                                  collate_fn=self.batchify)
 
         self.model = DanModel(len(i_to_class), len(i_to_word))
         self.model = self.model.to(self.device)
-        
-        log.info(f'Loading GloVe')
+
+        # log.info(f'Loading GloVe')
+        print('Loading GloVe')
         glove_word2idx, glove_vectors = load_glove("glove/glove.6B.300d.txt")
         for word, emb_index in word_to_i.items():
             if word.lower() in glove_word2idx:
@@ -173,12 +179,11 @@ class DANGuesser():
                 glove_vec = glove_vec.cuda()
                 self.model.text_embeddings.weight.data[emb_index, :].set_(glove_vec)
 
-
-        log.info(f'Model:\n{self.model}')
+        # log.info(f'Model:\n{self.model}')
+        print('Model:\n{self.model}')
         self.optimizer = Adam(self.model.parameters())
         self.criterion = nn.CrossEntropyLoss()
         self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, verbose=True, mode='max')
-
 
         temp_prefix = get_tmp_filename()
         self.model_file = f'{temp_prefix}.pt'
@@ -187,10 +192,10 @@ class DANGuesser():
         log = get(__name__)
         manager = TrainingManager([
             BaseLogger(log_func=log.info), TerminateOnNaN(), EarlyStopping(monitor='test_acc', patience=10, verbose=1),
-            MaxEpochStopping(100), ModelCheckpoint(create_save_model(self.model), self.model_file, monitor='test_acc')
+            MaxEpochStopping(500), ModelCheckpoint(create_save_model(self.model), self.model_file, monitor='test_acc')
         ])
 
-        log.info('Starting training')
+        print('Starting training')
 
         epoch = 0
         while True:
@@ -206,7 +211,8 @@ class DANGuesser():
             )
 
             if stop_training:
-                log.info(' '.join(reasons))
+                # log.info(' '.join(reasons))
+                print(' '.join(reasons))
                 break
             else:
                 self.scheduler.step(test_acc)
@@ -240,7 +246,7 @@ class DANGuesser():
     def guess(self, questions: List[QuestionText], max_n_guesses: Optional[int]) -> List[List[Tuple[Page, float]]]:
         y_data = np.zeros((len(questions)))
         x_data = [tokenize_question(q) for q in questions]
-        batches = batchify(x_data, y_data, shuffle=False, batch_size=32)
+        batches = self.batchify(x_data, y_data, shuffle=False, batch_size=32)
         guesses = []
         for x_batch, y_batch, length_batch in batches:
             y_batch = y_batch.to(self.device)
@@ -286,23 +292,23 @@ class DANGuesser():
                 'class_to_i': self.class_to_i,
                 'i_to_class': self.i_to_class,
                 'word_to_i': self.word_to_i,
-                'device' : self.device
+                'device': self.device
             }, f)
 
-def main():
 
+def main():
     global args
     args = parser.parse_args()
     category = categories[args.category] if args.category is not None else None
     if args.eval:
         dataset = QuizBowlDataset(guesser_train=True)
         questions = dataset.questions_by_fold()
-        questions = questions[ 'guessdev']
+        questions = questions['guessdev']
         dan = DANGuesser().load("./")
         dan.guess(questions)
 
     else:
-        training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
+        training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences=args.n_wiki_sentences)
 
         dan = DANGuesser()
         dan.train(training_data)
