@@ -52,6 +52,8 @@ parser.add_argument('--batch_size', type=int, default=32,
                     help='batch_size (default: 32)')
 parser.add_argument('--save_model', type=str, default="dan.pt",
                     help='save_model (default: dan.pt)')
+parser.add_argument('--eval', default=False, action='store_true',
+                    help='Run the evalulation')
 
 
 def make_array(tokens, vocab, add_eos=True):
@@ -148,6 +150,7 @@ class DANGuesser():
         i_to_word = ['<unk>', '<eos>'] + sorted(i_to_word)
         word_to_i = {x: i for i, x in enumerate(i_to_word)}
         self.word_to_i = word_to_i
+        log.info('Vocab len: ' + str(len(self.word_to_i)))
 
         train_sampler = RandomSampler(list(zip(x_train, y_train)))
         dev_sampler = RandomSampler(list(zip(x_val, y_val)))
@@ -195,7 +198,7 @@ class DANGuesser():
             train_acc, train_loss, train_time = self.run_epoch(train_loader)
 
             self.model.eval()
-            test_acc, test_loss, test_time = self.run_epoch(val_loader, train=False)
+            test_acc, test_loss, test_time = self.run_epoch(dev_loader, train=False)
 
             stop_training, reasons = manager.instruct(
                 train_time, train_loss, train_acc,
@@ -265,12 +268,15 @@ class DANGuesser():
         guesser = DANGuesser()
         guesser.class_to_i = params['class_to_i']
         guesser.i_to_class = params['i_to_class']
-        guesser.model = DANModel(len(guesser.i_to_class))
+        guesser.word_to_i = params['word_to_i']
+        guesser.device = params['device']
+        guesser.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        guesser.model = DanModel(len(guesser.i_to_class), len(guesser.word_to_i))
         guesser.model.load_state_dict(torch.load(
             os.path.join(directory, 'dan.pt'), map_location=lambda storage, loc: storage
-        ))
+        ).state_dict())
         guesser.model.eval()
-        guesser.model = guesser.model.to(self.device)
+        guesser.model = guesser.model.to(guesser.device)
         return guesser
 
     def save(self, directory: str) -> None:
@@ -278,7 +284,9 @@ class DANGuesser():
         with open(os.path.join(directory, 'dan.pkl'), 'wb') as f:
             cloudpickle.dump({
                 'class_to_i': self.class_to_i,
-                'i_to_class': self.i_to_class
+                'i_to_class': self.i_to_class,
+                'word_to_i': self.word_to_i,
+                'device' : self.device
             }, f)
 
 def main():
@@ -286,13 +294,20 @@ def main():
     global args
     args = parser.parse_args()
     category = categories[args.category] if args.category is not None else None
+    if args.eval:
+        dataset = QuizBowlDataset(guesser_train=True)
+        questions = dataset.questions_by_fold()
+        questions = questions[ 'guessdev']
+        dan = DANGuesser().load("./")
+        dan.guess(questions)
 
-    training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
+    else:
+        training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
 
-    dan = DANGuesser()
-    dan.train(training_data)
+        dan = DANGuesser()
+        dan.train(training_data)
 
-    dan.save("./")
+        dan.save("./")
 
 
 if __name__ == '__main__':
