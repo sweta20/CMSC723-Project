@@ -30,6 +30,7 @@ patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
 
+
 def extract_wiki_sentences(title, text, n_sentences, replace_title_mentions=''):
     """
     Extracts the first n_paragraphs from the text of a wikipedia page corresponding to the title.
@@ -63,6 +64,7 @@ def extract_wiki_sentences(title, text, n_sentences, replace_title_mentions=''):
 
     return sentences[:n_sentences]
 
+
 class WikipediaDataset():
     def __init__(self, answers: Set[str], n_sentences=5, replace_title_mentions=''):
         super().__init__()
@@ -77,7 +79,7 @@ class WikipediaDataset():
         with open("qanta-codalab/data/wiki_lookup.json") as f:
             wiki_lookup = json.load(f)
         for ans in self.answers:
-#             wiki_page = wikipedia.page( unidecode(ans).replace('_', ' '))
+            #             wiki_page = wikipedia.page( unidecode(ans).replace('_', ' '))
             if ans not in wiki_lookup:
                 continue
             wiki_page = wiki_lookup[ans]
@@ -91,6 +93,7 @@ class WikipediaDataset():
                     wiki_answers.append(ans)
 
         return wiki_content, wiki_answers, None
+
 
 def clean_question(question: str):
     """
@@ -107,6 +110,7 @@ def tokenize_question(text: str) -> List[str]:
 
 def format_guess(guess):
     return guess.strip().lower().replace(' ', '_').replace(':', '').replace('|', '')
+
 
 def preprocess_dataset(data, train_size=.9, test_size=.1,
                        vocab=None, class_to_i=None, i_to_class=None,
