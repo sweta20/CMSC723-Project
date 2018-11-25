@@ -30,11 +30,16 @@ ques_patterns = {"name the (\w+)","name these (\w+)","name this (\w+)","this (\w
 patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
+regex_pattern_apostrophe = r'(\w+)\'s'
 
 def my_replace(match):
     pattern = match.group().split(" ")
     pattern[-1] = pattern[-1].upper()
     return (" ").join(pattern)
+
+def my_apos_replace(match):
+    pattern = match.group().split("'")
+    return pattern[0]
 
 def extract_wiki_sentences(title, text, n_sentences, replace_title_mentions=''):
     """
@@ -105,11 +110,12 @@ def clean_question(question: str, map_pattern=False):
     :return:
     """
     clean_ques = re.sub(regex_pattern, '', question.strip().lower())
+    clean_ques = re.sub(regex_pattern_apostrophe, my_apos_replace, question.strip().lower())
     if map_pattern:
         for pattern in ques_patterns:
             clean_ques = re.sub(pattern, my_replace, clean_ques)
     return clean_ques
-
+    
 def tokenize_question(text: str, map_pattern=False) -> List[str]:
     return word_tokenize(clean_question(text, map_pattern))
 

@@ -274,6 +274,7 @@ class DANGuesser():
         guesser.i_to_class = params['i_to_class']
         guesser.word_to_i = params['word_to_i']
         guesser.device = params['device']
+        guesser.map_pattern = params['map_pattern']
         guesser.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         guesser.model = DanModel(len(guesser.i_to_class), len(guesser.word_to_i))
         guesser.model.load_state_dict(torch.load(
@@ -290,7 +291,8 @@ class DANGuesser():
                 'class_to_i': self.class_to_i,
                 'i_to_class': self.i_to_class,
                 'word_to_i': self.word_to_i,
-                'device' : self.device
+                'device' : self.device,
+                'map_pattern' : self.map_pattern
             }, f)
 
 def main():
