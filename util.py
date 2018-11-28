@@ -28,13 +28,13 @@ def get_tmp_filename(dir="./"):
 
     return file_name
 
-def get(name):
+def get(name, file_name="qanta.log"):
     log = logging.getLogger(name)
 
     if len(log.handlers) < 2:
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-        fh = logging.FileHandler('qanta.log')
+        fh = logging.FileHandler(file_name)
         fh.setLevel(logging.INFO)
         fh.setFormatter(formatter)
 

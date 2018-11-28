@@ -10,6 +10,7 @@ from unidecode import unidecode
 from typing import Set
 import nltk
 import re
+import spacy
 
 ftp_patterns = {
     '\n',
@@ -26,10 +27,22 @@ ftp_patterns = {
     'ftp'
 }
 
+ques_patterns = {"name the (\w+)","name these (\w+)","name this (\w+)","this (\w+)","these (\w+)"}
 patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
+regex_pattern_apostrophe = r'(\w+)\'s'
 
+nlp = spacy.load('xx_ent_wiki_sm')
+
+def my_replace(match):
+    pattern = match.group().split(" ")
+    pattern[-1] = pattern[-1].upper()
+    return (" ").join(pattern)
+
+def my_apos_replace(match):
+    pattern = match.group().split("'")
+    return pattern[0]
 
 def extract_wiki_sentences(title, text, n_sentences, replace_title_mentions=''):
     """
@@ -64,7 +77,6 @@ def extract_wiki_sentences(title, text, n_sentences, replace_title_mentions=''):
 
     return sentences[:n_sentences]
 
-
 class WikipediaDataset():
     def __init__(self, answers: Set[str], n_sentences=5, replace_title_mentions=''):
         super().__init__()
@@ -79,7 +91,7 @@ class WikipediaDataset():
         with open("qanta-codalab/data/wiki_lookup.json") as f:
             wiki_lookup = json.load(f)
         for ans in self.answers:
-            #             wiki_page = wikipedia.page( unidecode(ans).replace('_', ' '))
+#             wiki_page = wikipedia.page( unidecode(ans).replace('_', ' '))
             if ans not in wiki_lookup:
                 continue
             wiki_page = wiki_lookup[ans]
@@ -94,27 +106,62 @@ class WikipediaDataset():
 
         return wiki_content, wiki_answers, None
 
+def link_question(question: str):
+    """
+    Find links to Wikipedia entities and highlight them in question.
+    Lowercase everything else.
+    Example: 'I am in New York.' becomes 'i am in New_York.'
+    :param question:
+    :return:
+    """
+    sentence = nlp(question)
+    new_question = ''
+        
+    last_char = 0
 
-def clean_question(question: str):
+    if len(sentence.ents) == 0:
+        return question.lower() 
+
+    for i in range(len(sentence.ents)):
+        ent = sentence.ents[i]
+        ent_text = re.sub(' ', '_', ent.text)
+        new_question = new_question + question[last_char:ent.start_char].lower()
+        new_question = new_question + ent_text
+        last_char = ent.end_char
+
+    new_question = new_question + question[last_char:].lower()
+
+    return new_question
+
+def clean_question(question: str, map_pattern=False, wiki_links=False):
     """
     Remove pronunciation guides and other formatting extras
     :param question:
     :return:
     """
-    return re.sub(regex_pattern, '', question.strip().lower())
+    if wiki_links:
+        # don't lowercase linked wikipedia entities
+        question_lower = link_question(question)
+    else: 
+        question_lower = question.lower()
 
+    clean_ques = re.sub(regex_pattern, '', question_lower.strip())
+    clean_ques = re.sub(regex_pattern_apostrophe, my_apos_replace, question_lower.strip())
+    if map_pattern:
+        for pattern in ques_patterns:
+            clean_ques = re.sub(pattern, my_replace, clean_ques)
+    return clean_ques
 
-def tokenize_question(text: str) -> List[str]:
-    return word_tokenize(clean_question(text))
-
+    
+def tokenize_question(text: str, map_pattern=False) -> List[str]:
+    return word_tokenize(clean_question(text, map_pattern))
 
 def format_guess(guess):
     return guess.strip().lower().replace(' ', '_').replace(':', '').replace('|', '')
 
-
 def preprocess_dataset(data, train_size=.9, test_size=.1,
                        vocab=None, class_to_i=None, i_to_class=None,
-                       create_runs=False, full_question=False):
+                       create_runs=False, full_question=False, map_pattern=False, wiki_links=False):
     """
     This function does primarily text preprocessing on the dataset. It will return x_train and x_test as a list of
     examples where each word is a tokenized word list (not padded). y_train and y_test is a list of indices coresponding
@@ -164,7 +211,7 @@ def preprocess_dataset(data, train_size=.9, test_size=.1,
     for q, ans in train:
         q_text = []
         for sentence in q:
-            t_question = tokenize_question(sentence)
+            t_question = tokenize_question(sentence, map_pattern, wiki_links)
             if create_runs or full_question:
                 q_text.extend(t_question)
             else:
@@ -186,7 +233,7 @@ def preprocess_dataset(data, train_size=.9, test_size=.1,
     for q, ans in test:
         q_text = []
         for sentence in q:
-            t_question = tokenize_question(sentence)
+            t_question = tokenize_question(sentence, map_pattern, wiki_links)
             if len(t_question) > 0:
                 if create_runs or full_question:
                     q_text.extend(t_question)
