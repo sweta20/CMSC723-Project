@@ -56,6 +56,8 @@ parser.add_argument('--eval', default=False, action='store_true',
                     help='Run the evalulation')
 parser.add_argument('--map_pattern', default=False, action='store_true',
                     help='Map question patterns as signals')
+parser.add_argument('--wiki_links', default=False, action='store_true',
+                    help='Map question to Wiki Links')
 
 
 def make_array(tokens, vocab, add_eos=True):
@@ -144,7 +146,7 @@ class DANGuesser():
 
 
     def train(self, training_data: TrainingData) -> None:
-        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs, map_pattern=args.map_pattern)
+        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs, map_pattern=args.map_pattern, wiki_links=args.wiki_links)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
         log = get(__name__, "dan.log")
@@ -275,6 +277,7 @@ class DANGuesser():
         guesser.word_to_i = params['word_to_i']
         guesser.device = params['device']
         guesser.map_pattern = params['map_pattern']
+        guesser.wiki_links = params['wiki_links']
         guesser.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         guesser.model = DanModel(len(guesser.i_to_class), len(guesser.word_to_i))
         guesser.model.load_state_dict(torch.load(
@@ -292,7 +295,8 @@ class DANGuesser():
                 'i_to_class': self.i_to_class,
                 'word_to_i': self.word_to_i,
                 'device' : self.device,
-                'map_pattern' : self.map_pattern
+                'map_pattern' : self.map_pattern,
+                'wiki_links' : self.wiki_links
             }, f)
 
 def main():
