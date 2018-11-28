@@ -10,6 +10,7 @@ from unidecode import unidecode
 from typing import Set
 import nltk
 import re
+import spacy
 
 ftp_patterns = {
     '\n',
@@ -31,6 +32,8 @@ patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
 regex_pattern_apostrophe = r'(\w+)\'s'
+
+nlp = spacy.load('xx_ent_wiki_sm')
 
 def my_replace(match):
     pattern = match.group().split(" ")
@@ -102,7 +105,6 @@ class WikipediaDataset():
                     wiki_answers.append(ans)
 
         return wiki_content, wiki_answers, None
-
 
 def link_question(question: str):
     """
