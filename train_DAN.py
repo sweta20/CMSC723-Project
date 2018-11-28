@@ -198,6 +198,8 @@ class DANGuesser():
         print('Starting training')
 
         epoch = 0
+        accuracy = 0.0
+        state = {}
         while True:
             self.model.train()
             train_acc, train_loss, train_time = self.run_epoch(train_loader)
@@ -209,6 +211,19 @@ class DANGuesser():
                 train_time, train_loss, train_acc,
                 test_time, test_loss, test_acc
             )
+
+            if accuracy < test_acc:
+                accuracy = test_acc
+                print('Saving..')
+                state = {
+                    'net': self.model.state_dict(),
+                    'acc': accuracy,
+                    'epoch': epoch,
+                }
+
+            if not os.path.isdir('checkpoint'):
+                os.mkdir('checkpoint')
+            torch.save(state, './checkpoint/ckpt.t7')
 
             if stop_training:
                 # log.info(' '.join(reasons))
