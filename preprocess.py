@@ -11,6 +11,7 @@ from typing import Set
 import nltk
 import re
 import spacy
+from tqdm import tqdm
 
 ftp_patterns = {
     '\n',
@@ -126,7 +127,7 @@ def link_question(question: str):
         ent = sentence.ents[i]
         ent_text = re.sub(' ', '_', ent.text)
         new_question = new_question + question[last_char:ent.start_char].lower()
-        new_question = new_question + ent_text
+        new_question = new_question + ent_text.upper()
         last_char = ent.end_char
 
     new_question = new_question + question[last_char:].lower()
@@ -208,7 +209,7 @@ def preprocess_dataset(data, train_size=.9, test_size=.1,
         train = question_runs_with_answer
         test = []
 
-    for q, ans in train:
+    for q, ans in tqdm(train):
         q_text = []
         for sentence in q:
             t_question = tokenize_question(sentence, map_pattern, wiki_links)

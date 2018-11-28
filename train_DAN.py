@@ -308,8 +308,10 @@ def main():
         dataset = QuizBowlDataset(guesser_train=True)
         questions = dataset.questions_by_fold()
         questions = questions[ 'guessdev']
+        questions = [q.text for q in questions_dev]
+        answers =  [q.page for q in questions_dev]
         dan = DANGuesser().load("./")
-        dan.guess(questions)
+        guesses = dan.guess(questions)
 
     else:
         training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
