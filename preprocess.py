@@ -10,6 +10,7 @@ from unidecode import unidecode
 from typing import Set
 import nltk
 import re
+import spacy
 
 ftp_patterns = {
     '\n',
@@ -31,6 +32,8 @@ patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
 regex_pattern_apostrophe = r'(\w+)\'s'
+
+nlp = spacy.load('xx_ent_wiki_sm')
 
 def my_replace(match):
     pattern = match.group().split(" ")
@@ -103,14 +106,48 @@ class WikipediaDataset():
 
         return wiki_content, wiki_answers, None
 
-def clean_question(question: str, map_pattern=False):
+def link_question(question: str):
+    """
+    Find links to Wikipedia entities and highlight them in question.
+    Lowercase everything else.
+
+    Example: 'I am in New York.' becomes 'i am in New_York.'
+    :param question:
+    :return:
+    """
+    sentence = nlp(question)
+    new_question = ''
+        
+    last_char = 0
+
+    if len(sentence.ents) == 0:
+        return question.lower() 
+
+    for i in range(len(sentence.ents)):
+        ent = sentence.ents[i]
+        ent_text = re.sub(' ', '_', ent.text)
+        new_question = new_question + question[last_char:ent.start_char].lower()
+        new_question = new_question + ent_text
+        last_char = ent.end_char
+
+    new_question = new_question + question[last_char:].lower()
+
+    return new_question
+
+def clean_question(question: str, map_pattern=False, wiki_links=False):
     """
     Remove pronunciation guides and other formatting extras
     :param question:
     :return:
     """
-    clean_ques = re.sub(regex_pattern, '', question.strip().lower())
-    clean_ques = re.sub(regex_pattern_apostrophe, my_apos_replace, question.strip().lower())
+    if wiki_links:
+        # don't lowercase linked wikipedia entities
+        question_lower = link_question(question)
+    else: 
+        question_lower = question.lower()
+
+    clean_ques = re.sub(regex_pattern, '', question_lower.strip())
+    clean_ques = re.sub(regex_pattern_apostrophe, my_apos_replace, question_lower.strip())
     if map_pattern:
         for pattern in ques_patterns:
             clean_ques = re.sub(pattern, my_replace, clean_ques)
