@@ -60,6 +60,8 @@ parser.add_argument('--wiki_links', default=False, action='store_true',
                     help='Map question to Wiki Links')
 parser.add_argument('--use_es_highlight', default=False, action='store_true',
                     help='Map question to Wiki Links using es_highlight')
+parser.add_argument('--plot_embed', default=False, action='store_true',
+                    help='Plot text_embeddings')
 
 def make_array(tokens, vocab, add_eos=True):
     unk_id = vocab['<unk>']
@@ -316,6 +318,12 @@ def main():
         answers =  [q.page for q in questions_dev]
         dan = DANGuesser().load("./")
         guesses = dan.guess(questions)
+
+        if args.plot_embed:
+            ind2word = {v: k for k, v in dan.word_to_i.items()}
+            print('Plotting tsne embeddings:\n')
+            embedding_weights = dan.model.text_embeddings.weight.cpu().data.numpy()
+            plot_embedding(embedding_weights, ind2word)
 
     else:
         training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
