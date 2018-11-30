@@ -161,6 +161,7 @@ def clean_question(question: str, map_pattern=False, wiki_links=False, use_es_hi
 
     
 def tokenize_question(text: str, map_pattern=False, wiki_links=False, use_es_highlight=False) -> List[str]:
+    #return [w for w in word_tokenize(clean_question(text, map_pattern, wiki_links)) if not w in stop_words if w.isalpha() or "_" in w]
     return word_tokenize(clean_question(text, map_pattern, wiki_links, use_es_highlight))
 
 def format_guess(guess):
