@@ -58,7 +58,8 @@ parser.add_argument('--map_pattern', default=False, action='store_true',
                     help='Map question patterns as signals')
 parser.add_argument('--wiki_links', default=False, action='store_true',
                     help='Map question to Wiki Links')
-
+parser.add_argument('--use_es_highlight', default=False, action='store_true',
+                    help='Map question to Wiki Links using es_highlight')
 
 def make_array(tokens, vocab, add_eos=True):
     unk_id = vocab['<unk>']
@@ -146,7 +147,8 @@ class DANGuesser():
 
 
     def train(self, training_data: TrainingData) -> None:
-        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question, create_runs=args.create_runs, map_pattern=args.map_pattern, wiki_links=args.wiki_links)
+        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question,\
+         create_runs=args.create_runs, map_pattern=args.map_pattern, wiki_links=args.wiki_links, use_es_highlight=args.use_es_highlight)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
         log = get(__name__, "dan.log")
@@ -278,6 +280,7 @@ class DANGuesser():
         guesser.device = params['device']
         guesser.map_pattern = params['map_pattern']
         guesser.wiki_links = params['wiki_links']
+        guesser.use_es_highlight = params['use_es_highlight']
         guesser.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         guesser.model = DanModel(len(guesser.i_to_class), len(guesser.word_to_i))
         guesser.model.load_state_dict(torch.load(
@@ -296,7 +299,8 @@ class DANGuesser():
                 'word_to_i': self.word_to_i,
                 'device' : self.device,
                 'map_pattern' : self.map_pattern,
-                'wiki_links' : self.wiki_links
+                'wiki_links' : self.wiki_links,
+                'use_es_highlight' : self.use_es_highlight
             }, f)
 
 def main():
