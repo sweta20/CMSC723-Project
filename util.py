@@ -10,12 +10,38 @@ import tempfile
 from typing import Tuple, List, Any, Dict, Optional
 import abc
 
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+
 QuestionText = str
 Page = str
 Evidence = Dict[str, Any]
 TrainingData = Tuple[List[List[QuestionText]], List[Page], Optional[List[Evidence]]]
 
 
+
+def plot_with_labels(low_dim_embs, labels, filename='tsne.png'):
+    assert low_dim_embs.shape[0] >= len(labels), 'More labels than embeddings'
+    plt.figure(figsize=(14, 14))  # in inches
+    for i, label in enumerate(labels):
+        x, y = low_dim_embs[i, :]
+        plt.scatter(x, y)
+        plt.annotate(label,
+                     xy=(x, y),
+                     xytext=(5, 2),
+                     textcoords='offset points',
+                     ha='right',
+                     va='bottom')
+    plt.show()
+
+def plot_embedding(embedding, reverse_dictionary):
+    tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=5000)
+    indices =  np.random.choice(len(embedding), 1000)
+    low_dim_embs = tsne.fit_transform(embedding[indices])
+    labels = [reverse_dictionary[i] for i in indices]
+    plot_with_labels(low_dim_embs, labels)
+    return low_dim_embs
+    
 def create_save_model(model):
     def save_model(path):
         torch.save(model, path)

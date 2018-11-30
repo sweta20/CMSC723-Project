@@ -11,7 +11,9 @@ from typing import Set
 import nltk
 import re
 import spacy
-
+from tqdm import tqdm
+from get_highlighted_text import get_response  # imported here to reduce dependencies for no reason
+        
 ftp_patterns = {
     '\n',
     ', for 10 points,',
@@ -126,14 +128,14 @@ def link_question(question: str):
         ent = sentence.ents[i]
         ent_text = re.sub(' ', '_', ent.text)
         new_question = new_question + question[last_char:ent.start_char].lower()
-        new_question = new_question + ent_text
+        new_question = new_question + ent_text.upper()
         last_char = ent.end_char
 
     new_question = new_question + question[last_char:].lower()
 
     return new_question
 
-def clean_question(question: str, map_pattern=False, wiki_links=False):
+def clean_question(question: str, map_pattern=False, wiki_links=False, use_es_highlight=False):
     """
     Remove pronunciation guides and other formatting extras
     :param question:
@@ -142,6 +144,11 @@ def clean_question(question: str, map_pattern=False, wiki_links=False):
     if wiki_links:
         # don't lowercase linked wikipedia entities
         question_lower = link_question(question)
+    elif use_es_highlight:
+    	try:
+        	question_lower = get_response(question)
+        except:
+        	question_lower = question.lower()
     else: 
         question_lower = question.lower()
 
@@ -153,15 +160,15 @@ def clean_question(question: str, map_pattern=False, wiki_links=False):
     return clean_ques
 
     
-def tokenize_question(text: str, map_pattern=False) -> List[str]:
-    return word_tokenize(clean_question(text, map_pattern))
+def tokenize_question(text: str, map_pattern=False, wiki_links=False, use_es_highlight=False) -> List[str]:
+    return word_tokenize(clean_question(text, map_pattern, wiki_links, use_es_highlight))
 
 def format_guess(guess):
     return guess.strip().lower().replace(' ', '_').replace(':', '').replace('|', '')
 
 def preprocess_dataset(data, train_size=.9, test_size=.1,
                        vocab=None, class_to_i=None, i_to_class=None,
-                       create_runs=False, full_question=False, map_pattern=False, wiki_links=False):
+                       create_runs=False, full_question=False, map_pattern=False, wiki_links=False, use_es_highlight=False):
     """
     This function does primarily text preprocessing on the dataset. It will return x_train and x_test as a list of
     examples where each word is a tokenized word list (not padded). y_train and y_test is a list of indices coresponding
@@ -208,10 +215,10 @@ def preprocess_dataset(data, train_size=.9, test_size=.1,
         train = question_runs_with_answer
         test = []
 
-    for q, ans in train:
+    for q, ans in tqdm(train):
         q_text = []
         for sentence in q:
-            t_question = tokenize_question(sentence, map_pattern, wiki_links)
+            t_question = tokenize_question(sentence, map_pattern, wiki_links, use_es_highlight)
             if create_runs or full_question:
                 q_text.extend(t_question)
             else:
