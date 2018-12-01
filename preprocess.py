@@ -241,7 +241,7 @@ def preprocess_dataset(data, train_size=.9, test_size=.1,
     for q, ans in test:
         q_text = []
         for sentence in q:
-            t_question = tokenize_question(sentence, map_pattern, wiki_links)
+            t_question = tokenize_question(sentence, map_pattern, wiki_links, use_es_highlight)
             if len(t_question) > 0:
                 if create_runs or full_question:
                     q_text.extend(t_question)

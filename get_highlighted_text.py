@@ -8,7 +8,7 @@ def get_response(text):
     import requests
 
     stopword_list = list(set(stopwords.words("english")))
-    url = "http://0.0.0.0:5000/api/get_highlights"  # the URL of the ElasticSearch host goes here
+    url = "http://192.168.34.9:5000/api/get_highlights"  # the URL of the ElasticSearch host goes here
     data = {"text": text}
     try:
         response = requests.post(url=url, data=data)
