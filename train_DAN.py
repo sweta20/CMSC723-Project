@@ -21,6 +21,7 @@ from  torch.utils.data.sampler import SequentialSampler, RandomSampler
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.optim import Adam, lr_scheduler
+from torch.nn import functional as F
 
 categories = {
     0: ['History', 'Philosophy', 'Religion'],
