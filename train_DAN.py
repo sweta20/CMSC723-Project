@@ -332,7 +332,7 @@ def main():
     if args.eval:
         dataset = QuizBowlDataset(guesser_train=True)
         questions = dataset.questions_by_fold()
-        questions = questions[ 'guessdev']
+        questions_dev = questions[ 'guessdev']
         questions = [q.text for q in questions_dev]
         answers =  [q.page for q in questions_dev]
         dan = DANGuesser().load("./")
