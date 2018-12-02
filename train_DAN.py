@@ -53,6 +53,8 @@ parser.add_argument('--batch_size', type=int, default=32,
                     help='batch_size (default: 32)')
 parser.add_argument('--save_model', type=str, default="dan.pt",
                     help='save_model (default: dan.pt)')
+parser.add_argument('--output_dir', type=str, default="./",
+                    help='Where to save the model (default: ./)')
 parser.add_argument('--eval', default=False, action='store_true',
                     help='Run the evalulation')
 parser.add_argument('--map_pattern', default=False, action='store_true',
@@ -123,6 +125,13 @@ class DANGuesser():
         self.criterion = None
         self.scheduler = None
         self.model_file = None
+
+        self.map_pattern = False
+        self.wiki_links = False
+        self.use_es_highlight = False
+        self.full_question = False
+        self.use_wiki = False
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def batchify(self, batch):
@@ -154,6 +163,13 @@ class DANGuesser():
          create_runs=args.create_runs, map_pattern=args.map_pattern, wiki_links=args.wiki_links, use_es_highlight=args.use_es_highlight)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
+
+        self.map_pattern = args.map_pattern
+        self.wiki_links = args.wiki_links
+        self.use_es_highlight = args.use_es_highlight
+        self.full_question = args.full_question
+        self.use_wiki = args.use_wiki
+
         log = get(__name__, "dan.log")
         log.info('Batchifying data')
         vocab = ['<unk>', '<eos>'] + sorted(vocab)
@@ -248,7 +264,7 @@ class DANGuesser():
 
     def guess(self, questions: List[QuestionText], max_n_guesses: Optional[int]) -> List[List[Tuple[Page, float]]]:
         y_data = np.zeros((len(questions)))
-        x_data = [tokenize_question(q) for q in questions]
+        x_data = [tokenize_question(q, self.map_pattern, self.wiki_links, self.use_es_highlight) for q in questions]
 
         batches = self.batchify(list(zip(x_data, y_data)))
         guesses = []
@@ -283,6 +299,7 @@ class DANGuesser():
         guesser.device = params['device']
         guesser.map_pattern = params['map_pattern']
         guesser.wiki_links = params['wiki_links']
+        guesser.use_wiki = params['use_wiki']
         guesser.use_es_highlight = params['use_es_highlight']
         guesser.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         guesser.model = DanModel(len(guesser.i_to_class), len(guesser.word_to_i))
@@ -300,6 +317,7 @@ class DANGuesser():
                 'class_to_i': self.class_to_i,
                 'i_to_class': self.i_to_class,
                 'word_to_i': self.word_to_i,
+                'use_wiki' : self.use_wiki,
                 'device' : self.device,
                 'map_pattern' : self.map_pattern,
                 'wiki_links' : self.wiki_links,
@@ -332,7 +350,7 @@ def main():
         dan = DANGuesser()
         dan.train(training_data)
 
-        dan.save("./")
+        dan.save(args.output_dir)
 
 
 if __name__ == '__main__':
