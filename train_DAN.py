@@ -4,7 +4,7 @@ from dataset import QuizBowlDataset
 from util import create_save_model
 from models import DanModel
 from util import BaseLogger, TerminateOnNaN, EarlyStopping, ModelCheckpoint, MaxEpochStopping, TrainingManager
-from util import get, get_tmp_filename
+from util import get, get_tmp_filename, plot_embedding
 from util import QuestionText, TrainingData, Page, Evidence
 import argparse
 import json
@@ -17,7 +17,7 @@ import time
 import cloudpickle
 import torch
 from torch.utils.data import DataLoader
-from  torch.utils.data.sampler import SequentialSampler, RandomSampler
+from torch.utils.data.sampler import SequentialSampler, RandomSampler
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.optim import Adam, lr_scheduler
@@ -32,11 +32,10 @@ categories = {
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 parser = argparse.ArgumentParser(description='DAN training')
 parser.add_argument('--full_question', action='store_true', default=False,
                     help='Use full question (default: False)')
-parser.add_argument('--create_runs', action='store_true',default=False,
+parser.add_argument('--create_runs', action='store_true', default=False,
                     help='Use full question (default: False)')
 parser.add_argument('--category', type=int, default=None,
                     help='''categories = {
@@ -45,7 +44,7 @@ parser.add_argument('--category', type=int, default=None,
                             2: ['Science', 'Social Science'],
                             3: ['Current Events', 'Trash', 'Fine Arts', 'Geography']
                             } (default:None)''')
-parser.add_argument('--use_wiki', action='store_true',default=False,
+parser.add_argument('--use_wiki', action='store_true', default=True,
                     help='use_wiki (default: False)')
 parser.add_argument('--n_wiki_sentences', type=int, default=5,
                     help='n_wiki_sentences (default: 5)')
@@ -57,14 +56,15 @@ parser.add_argument('--output_dir', type=str, default="./",
                     help='Where to save the model (default: ./)')
 parser.add_argument('--eval', default=False, action='store_true',
                     help='Run the evalulation')
-parser.add_argument('--map_pattern', default=False, action='store_true',
+parser.add_argument('--map_pattern', default=True, action='store_true',
                     help='Map question patterns as signals')
 parser.add_argument('--wiki_links', default=False, action='store_true',
                     help='Map question to Wiki Links')
-parser.add_argument('--use_es_highlight', default=False, action='store_true',
+parser.add_argument('--use_es_highlight', default=True, action='store_true',
                     help='Map question to Wiki Links using es_highlight')
 parser.add_argument('--plot_embed', default=False, action='store_true',
                     help='Plot text_embeddings')
+
 
 def make_array(tokens, vocab, add_eos=True):
     unk_id = vocab['<unk>']
@@ -83,11 +83,12 @@ def transform_to_array(dataset, vocab, with_label=True):
         return [make_array(tokens, vocab)
                 for tokens in dataset]
 
-def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki=False, n_wiki_sentences = 5):
+
+def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki=False, n_wiki_sentences=5):
     print("Loading data with guesser_train: " + str(guesser_train) + " buzzer_train:  " + str(buzzer_train))
     qb_dataset = QuizBowlDataset(guesser_train=guesser_train, buzzer_train=buzzer_train, category=category)
     training_data = qb_dataset.training_data()
-    
+
     if use_wiki and n_wiki_sentences > 0:
         print("Using wiki dataset with n_wiki_sentences: " + str(n_wiki_sentences))
         wiki_dataset = WikipediaDataset(set(training_data[1]), n_wiki_sentences)
@@ -95,6 +96,7 @@ def get_quizbowl(guesser_train=True, buzzer_train=False, category=None, use_wiki
         training_data[0].extend(wiki_training_data[0])
         training_data[1].extend(wiki_training_data[1])
     return training_data
+
 
 def load_glove(filename):
     idx = 0
@@ -111,7 +113,6 @@ def load_glove(filename):
             vectors.append(vect)
 
     return word2idx, vectors
-
 
 
 class DANGuesser():
@@ -157,10 +158,13 @@ class DANGuesser():
         q_batch = {'text': x1, 'len': torch.FloatTensor(question_len), 'labels': target_labels}
         return q_batch
 
-
     def train(self, training_data: TrainingData) -> None:
-        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data, full_question=args.full_question,\
-         create_runs=args.create_runs, map_pattern=args.map_pattern, wiki_links=args.wiki_links, use_es_highlight=args.use_es_highlight)
+        x_train, y_train, x_val, y_val, vocab, class_to_i, i_to_class = preprocess_dataset(training_data,
+                                                                                           full_question=args.full_question, \
+                                                                                           create_runs=args.create_runs,
+                                                                                           map_pattern=args.map_pattern,
+                                                                                           wiki_links=args.wiki_links,
+                                                                                           use_es_highlight=args.use_es_highlight)
         self.class_to_i = class_to_i
         self.i_to_class = i_to_class
 
@@ -180,15 +184,15 @@ class DANGuesser():
         train_sampler = RandomSampler(list(zip(x_train, y_train)))
         dev_sampler = RandomSampler(list(zip(x_val, y_val)))
         dev_loader = DataLoader(list(zip(x_val, y_val)), batch_size=args.batch_size,
-                                                   sampler=dev_sampler, num_workers=0,
-                                                   collate_fn=self.batchify)
+                                sampler=dev_sampler, num_workers=0,
+                                collate_fn=self.batchify)
         train_loader = DataLoader(list(zip(x_train, y_train)), batch_size=args.batch_size,
-                                           sampler=train_sampler, num_workers=0,
-                                           collate_fn=self.batchify)
+                                  sampler=train_sampler, num_workers=0,
+                                  collate_fn=self.batchify)
 
         self.model = DanModel(len(i_to_class), len(vocab))
         self.model = self.model.to(self.device)
-        
+
         log.info(f'Loading GloVe')
         glove_word2idx, glove_vectors = load_glove("glove/glove.6B.300d.txt")
         for word, emb_index in word_to_i.items():
@@ -198,12 +202,10 @@ class DANGuesser():
                 glove_vec = glove_vec.cuda()
                 self.model.text_embeddings.weight.data[emb_index, :].set_(glove_vec)
 
-
         log.info(f'Model:\n{self.model}')
         self.optimizer = Adam(self.model.parameters())
         self.criterion = nn.CrossEntropyLoss()
         self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, verbose=True, mode='max')
-
 
         temp_prefix = get_tmp_filename()
         self.model_file = f'{temp_prefix}.pt'
@@ -283,7 +285,7 @@ class DANGuesser():
 
         batches = self.batchify(list(zip(x_data, y_data)))
         guesses = []
-        
+
         x_batch = batches["text"]
         length_batch = batches["len"]
         self.model.eval()
@@ -332,26 +334,27 @@ class DANGuesser():
                 'class_to_i': self.class_to_i,
                 'i_to_class': self.i_to_class,
                 'word_to_i': self.word_to_i,
-                'use_wiki' : self.use_wiki,
-                'device' : self.device,
-                'map_pattern' : self.map_pattern,
-                'wiki_links' : self.wiki_links,
-                'use_es_highlight' : self.use_es_highlight
+                'use_wiki': self.use_wiki,
+                'device': self.device,
+                'map_pattern': self.map_pattern,
+                'wiki_links': self.wiki_links,
+                'use_es_highlight': self.use_es_highlight
             }, f)
 
-def main():
 
+def main():
     global args
     args = parser.parse_args()
     category = categories[args.category] if args.category is not None else None
     if args.eval:
         dataset = QuizBowlDataset(guesser_train=True)
         questions = dataset.questions_by_fold()
-        questions = questions[ 'guessdev']
+        # questions = questions['guessdev']
+        questions_dev = questions['guessdev']
         questions = [q.text for q in questions_dev]
-        answers =  [q.page for q in questions_dev]
+        answers = [q.page for q in questions_dev]
         dan = DANGuesser().load("./")
-        guesses = dan.guess(questions)
+        guesses = dan.guess(questions, max_n_guesses=1)
 
         if args.plot_embed:
             ind2word = {v: k for k, v in dan.word_to_i.items()}
@@ -360,7 +363,7 @@ def main():
             plot_embedding(embedding_weights, ind2word)
 
     else:
-        training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences = args.n_wiki_sentences)
+        training_data = get_quizbowl(category=category, use_wiki=args.use_wiki, n_wiki_sentences=args.n_wiki_sentences)
 
         dan = DANGuesser()
         dan.train(training_data)
