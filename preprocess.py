@@ -13,7 +13,8 @@ import re
 import spacy
 from tqdm import tqdm
 from get_highlighted_text import get_response  # imported here to reduce dependencies for no reason
-        
+from nltk.corpus import stopwords
+
 ftp_patterns = {
     '\n',
     ', for 10 points,',
@@ -34,6 +35,7 @@ patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
 regex_pattern_apostrophe = r'(\w+)\'s'
+stop_words = set(stopwords.words('english')) 
 
 nlp = spacy.load('xx_ent_wiki_sm')
 
@@ -161,6 +163,7 @@ def clean_question(question: str, map_pattern=False, wiki_links=False, use_es_hi
 
     
 def tokenize_question(text: str, map_pattern=False, wiki_links=False, use_es_highlight=False) -> List[str]:
+    #return [w for w in word_tokenize(clean_question(text, map_pattern, wiki_links)) if not w in stop_words if w.isalpha() or "_" in w]
     return word_tokenize(clean_question(text, map_pattern, wiki_links, use_es_highlight))
 
 def format_guess(guess):
@@ -240,7 +243,7 @@ def preprocess_dataset(data, train_size=.9, test_size=.1,
     for q, ans in test:
         q_text = []
         for sentence in q:
-            t_question = tokenize_question(sentence, map_pattern, wiki_links)
+            t_question = tokenize_question(sentence, map_pattern, wiki_links, use_es_highlight)
             if len(t_question) > 0:
                 if create_runs or full_question:
                     q_text.extend(t_question)
