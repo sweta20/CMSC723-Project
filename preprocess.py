@@ -13,7 +13,8 @@ import re
 import spacy
 from tqdm import tqdm
 from get_highlighted_text import get_response  # imported here to reduce dependencies for no reason
-        
+from nltk.corpus import stopwords
+
 ftp_patterns = {
     '\n',
     ', for 10 points,',
@@ -34,6 +35,7 @@ patterns = ftp_patterns | set(string.punctuation)
 regex_pattern = '|'.join([re.escape(p) for p in patterns])
 regex_pattern += r'|\[.*?\]|\(.*?\)'
 regex_pattern_apostrophe = r'(\w+)\'s'
+stop_words = set(stopwords.words('english')) 
 
 nlp = spacy.load('xx_ent_wiki_sm')
 
