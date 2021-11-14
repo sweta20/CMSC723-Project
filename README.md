@@ -1,4 +1,4 @@
-# CMSC723-Project
+# CMSC723-Project: Question Answering
 Code for CMSC723 project
 
 TO DO:
